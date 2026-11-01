@@ -60,6 +60,15 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--
 .on{color:var(--ok)} .off{color:var(--dim)}
 .howto{font-size:12px;color:var(--dim);line-height:1.8;text-align:left;background:#00000033;border-radius:10px;padding:10px 12px;margin-top:6px}
 .howto b{color:var(--fg)}
+#pad{flex:none;display:flex;justify-content:space-between;gap:16px;padding-top:8px;padding-bottom:10px;
+  padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));
+  background:var(--panel);border-top:1px solid var(--line)}
+.cluster{display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:1;max-width:200px}
+#pad button{height:56px;border:0;border-radius:16px;background:#2e2e60;color:var(--fg);font:900 26px var(--font);
+  box-shadow:0 4px 0 #0007;touch-action:none;user-select:none;-webkit-user-select:none}
+#pad button.wide{grid-column:span 2;height:46px;font-size:15px}
+#pad .rot{background:#7a3360;font-size:32px}
+#pad button.on{transform:translateY(3px);box-shadow:0 1px 0 #0007;filter:brightness(1.35)}
 .err{color:var(--bad);font-size:13px;min-height:1.2em;margin:4px 0}
 </style>
 </head>
@@ -80,6 +89,18 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--
         <span class="lbl">あいて</span><canvas id="t2"></canvas><canvas id="b2"></canvas>
         <span class="score" id="s2">0</span><span id="wins"></span>
       </div>
+    </div>
+  </div>
+  <div id="pad">
+    <div class="cluster">
+      <button type="button" data-a="L" aria-label="左へ">◀</button>
+      <button type="button" data-a="R" aria-label="右へ">▶</button>
+      <button type="button" data-a="SOFT" class="wide">▼ はやく</button>
+    </div>
+    <div class="cluster">
+      <button type="button" data-a="CCW" class="rot" aria-label="左回転">↺</button>
+      <button type="button" data-a="CW" class="rot" aria-label="右回転">↻</button>
+      <button type="button" data-a="HARD" class="wide">⤓ すぐおとす</button>
     </div>
   </div>
 </div>
@@ -293,38 +314,25 @@ function drawNext(b,cv){const ctx=ctxOf(cv);ctx.clearRect(0,0,CS*2.9,CS*2.8);
   blob(ctx,CS,CS*0.9,CS*0.75,n1[1]);blob(ctx,CS,CS*0.9,CS*1.75,n1[0]);
   blob(ctx,CS,CS*2.1,CS*1.6,n2[1],0.72);blob(ctx,CS,CS*2.1,CS*2.33,n2[0],0.72);}
 
-/* ---------- タッチ操作 ----------
-   左右スワイプ: 指を動かした分だけ移動 / 下スワイプ(押しっぱなし): 高速落下
-   下にはじく: すぐ落とす / タップ: 右半分=右回転・左半分=左回転 */
-(function bindZone(){
-  const zone=$("zone"),ptrs=new Map();
-  zone.addEventListener("pointerdown",e=>{
-    e.preventDefault();initAudio();
-    if(!me||!playing||paused||readyT>0)return;
-    const now=performance.now();
-    ptrs.set(e.pointerId,{sx:e.clientX,sy:e.clientY,ax:e.clientX,t:now,lt:now,ly:e.clientY,vy:0,moved:false,soft:false});
-    try{zone.setPointerCapture(e.pointerId);}catch(_){}
+/* ---------- ボタン操作 ----------
+   ◀▶: 押しっぱなしで連続移動 / ▼: 押している間はやく落ちる / ⟲⟳: 回転 / ⤓: すぐ落とす */
+(function bindPad(){
+  const REPEAT={L:1,R:1};
+  document.querySelectorAll("#pad button").forEach(b=>{
+    const a=b.dataset.a;let timer=null,held=false;
+    const fire=()=>{if(me&&playing&&!paused&&readyT<=0)me.queue.push(a);};
+    b.addEventListener("pointerdown",e=>{
+      e.preventDefault();initAudio();try{b.setPointerCapture(e.pointerId);}catch(_){}
+      b.classList.add("on");
+      if(a==="SOFT"){if(!held&&me){held=true;me.softCount++;}return;}
+      fire();
+      if(REPEAT[a]){clearTimeout(timer);const rep=()=>{fire();timer=setTimeout(rep,55);};timer=setTimeout(rep,170);}
+    });
+    const up=()=>{b.classList.remove("on");clearTimeout(timer);timer=null;
+      if(a==="SOFT"&&held){held=false;if(me)me.softCount=Math.max(0,me.softCount-1);}};
+    ["pointerup","pointercancel","lostpointercapture"].forEach(ev=>b.addEventListener(ev,up));
+    b.addEventListener("contextmenu",e=>e.preventDefault());
   });
-  zone.addEventListener("pointermove",e=>{
-    const p=ptrs.get(e.pointerId);if(!p||!me)return;
-    const step=CS*0.75;let dx=e.clientX-p.ax;
-    while(dx>=step){me.queue.push("R");p.ax+=step;dx-=step;p.moved=true;}
-    while(dx<=-step){me.queue.push("L");p.ax-=step;dx+=step;p.moved=true;}
-    const dy=e.clientY-p.sy,tdx=Math.abs(e.clientX-p.sx);
-    if(!p.soft&&dy>CS*0.9&&dy>tdx){p.soft=true;p.moved=true;me.softCount++;}
-    else if(p.soft&&dy<CS*0.4){p.soft=false;me.softCount--;}
-    const now=performance.now(),dt=now-p.lt;
-    if(dt>0){p.vy=p.vy*0.5+((e.clientY-p.ly)/dt)*0.5;p.lt=now;p.ly=e.clientY;}
-  });
-  const end=e=>{
-    const p=ptrs.get(e.pointerId);if(!p)return;ptrs.delete(e.pointerId);if(!me)return;
-    if(p.soft)me.softCount=Math.max(0,me.softCount-1);
-    if(e.type==="pointercancel")return;
-    const dist=Math.hypot(e.clientX-p.sx,e.clientY-p.sy),dur=performance.now()-p.t,dy=e.clientY-p.sy;
-    if(!p.moved&&dist<14&&dur<350){const r=zone.getBoundingClientRect();me.queue.push(e.clientX-r.left<r.width/2?"CCW":"CW");}
-    else if(p.vy>1.1&&dy>CS*1.4&&performance.now()-p.lt<80)me.queue.push("HARD");
-  };
-  zone.addEventListener("pointerup",end);zone.addEventListener("pointercancel",end);
 })();
 document.addEventListener("gesturestart",e=>e.preventDefault());
 
@@ -445,8 +453,7 @@ function showMenu(){
    <button type="button" class="primary" id="goOnline" ${ok?"":"disabled"}><span>ふたりでたいせん</span>
      <small>${ok?"スマホ2台でへやに入って対戦":"通信の準備ができませんでした。電波を確認して開き直してね"}</small></button>
    <button type="button" id="goSolo"><span>ひとりでエンドレス</span><small>ハイスコア ${best}</small></button>
-   <div class="howto"><b>左右スワイプ</b> いどう(指をずらした分だけ動く)<br><b>タップ</b> 右半分=右回転 / 左半分=左回転<br>
-   <b>下スワイプ</b> はやくおとす / <b>下にはじく</b> すぐおとす<br>壁ぎわで回らない時は2回タップで半回転</div>`);
+   <div class="howto"><b>◀ ▶</b> いどう(押しっぱなしで連続)<br><b>↺ ↻</b> 左回転 / 右回転<br><b>▼ はやく</b> 押している間はやくおとす<br><b>⤓ すぐおとす</b> いっきに下まで<br>壁ぎわで回らない時は2回押すと半回転</div>`);
   $("goOnline").onclick=showOnlineMenu;$("goSolo").onclick=()=>startSolo();
 }
 function showOnlineMenu(err){
