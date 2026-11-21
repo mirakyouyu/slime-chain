@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="data:,">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>スライムチェイン</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -17,12 +18,15 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
+#zone,#zone *,#pad,#pad *{touch-action:none}
+#overlay,#top{touch-action:manipulation}
 html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--fg);font-family:var(--font);
   touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;overscroll-behavior:none}
 #game{height:100%;display:flex;flex-direction:column}
 #top{height:40px;flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;
   padding-left:max(10px,env(safe-area-inset-left,0px));padding-right:max(10px,env(safe-area-inset-right,0px));
   background:var(--panel);border-bottom:1px solid var(--line)}
+#sndBtn{position:relative;z-index:11}
 #top button{height:28px;min-width:48px;padding:0 12px;border:0;border-radius:14px;background:#ffffff1a;color:var(--fg);font:800 13px var(--font)}
 #status{font-size:12px;font-weight:800;color:var(--dim);text-align:center;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #status .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:1px}
@@ -66,8 +70,9 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--
 .cluster{display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:1;max-width:200px}
 #pad button{height:56px;border:0;border-radius:16px;background:#2e2e60;color:var(--fg);font:900 26px var(--font);
   box-shadow:0 4px 0 #0007;touch-action:none;user-select:none;-webkit-user-select:none}
-#pad button.wide{grid-column:span 2;height:46px;font-size:15px}
-#pad .rot{background:#7a3360;font-size:32px}
+#pad button.wide{grid-column:span 2;height:76px;font-size:22px}
+#pad .rot{background:#7a3360;font-size:34px}
+#pad .cluster.r button{height:140px}
 #pad button.on{transform:translateY(3px);box-shadow:0 1px 0 #0007;filter:brightness(1.35)}
 .err{color:var(--bad);font-size:13px;min-height:1.2em;margin:4px 0}
 </style>
@@ -78,7 +83,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--
   <div id="top">
     <button id="menuBtn" type="button">メニュー</button>
     <span id="status"></span>
-    <button id="pauseBtn" type="button">⏸</button>
+    <span><button id="sndBtn" type="button">🔊</button> <button id="pauseBtn" type="button">⏸</button></span>
   </div>
   <div id="zone">
     <div class="col"><canvas id="t1"></canvas><canvas id="b1" class="board"></canvas></div>
@@ -97,10 +102,9 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--
       <button type="button" data-a="R" aria-label="右へ">▶</button>
       <button type="button" data-a="SOFT" class="wide">▼ はやく</button>
     </div>
-    <div class="cluster">
+    <div class="cluster r">
       <button type="button" data-a="CCW" class="rot" aria-label="左回転">↺</button>
       <button type="button" data-a="CW" class="rot" aria-label="右回転">↻</button>
-      <button type="button" data-a="HARD" class="wide">⤓ すぐおとす</button>
     </div>
   </div>
 </div>
@@ -111,6 +115,10 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--
 const COLS=6, ROWS=13, NCOL=4;
 let CS=30, MS=12;
 const OFF=[[0,-1],[1,0],[0,1],[-1,0]];
+/* 連鎖のテンポ(ms): 1マス落ちる時間 / 消えるまでの点滅時間 / 消えた後の間 */
+const LOCK_RESET_MAX=15;
+const ROT_ANIM=180; // 回転の見た目のアニメーション時間(ms)
+const GRAV_STEP=65,POP_TIME=900,AFTER_POP=320;
 const CHAIN_B=[0,6,14,28,50,80,110,140,170,200,230,260,290,320,350,380,410,440,470];
 const COLORS={1:{l:"#ffb3c0",m:"#ff4d6d",d:"#c21f43"},2:{l:"#b6ffd3",m:"#2fd77a",d:"#14904c"},
   3:{l:"#bfe0ff",m:"#4d9dff",d:"#1d5fc4"},4:{l:"#fff3b0",m:"#ffd23f",d:"#d19a00"},5:{l:"#f0f0f8",m:"#b8b8cc",d:"#7a7a90"}};
@@ -148,16 +156,45 @@ function removeGroups(g,gs){
 }
 
 /* ---------- サウンド・振動 ---------- */
-let AC=null;
-function initAudio(){try{if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();if(AC.state==="suspended")AC.resume();}catch(e){}}
+let AC=null,MG=null,soundOn=true;
+try{soundOn=localStorage.getItem("slimechain_sound")!=="off";}catch(e){}
+let unlockEl=null;
+function silentWav(){const n=4000,b=new ArrayBuffer(44+n),v=new DataView(b),w=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i));};
+  w(0,"RIFF");v.setUint32(4,36+n,true);w(8,"WAVEfmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,8000,true);v.setUint32(28,8000,true);v.setUint16(32,1,true);v.setUint16(34,8,true);w(36,"data");v.setUint32(40,n,true);
+  for(let i=0;i<n;i++)v.setUint8(44+i,128);return URL.createObjectURL(new Blob([b],{type:"audio/wav"}));}
+function initAudio(){
+  try{if(navigator.audioSession&&navigator.audioSession.type!=="playback")navigator.audioSession.type="playback";}catch(e){}
+  try{
+    // 古いiPhone向け: 無音の<audio>を流しておくとマナーモードでも鳴りやすくなる
+    if(!navigator.audioSession&&!unlockEl){unlockEl=new Audio(silentWav());unlockEl.loop=true;unlockEl.setAttribute("playsinline","");unlockEl.play().catch(()=>{unlockEl=null;});}
+  }catch(e){unlockEl=null;}
+  try{
+    if(!AC){const C=window.AudioContext||window.webkitAudioContext;if(!C)return;AC=new C();MG=AC.createGain();MG.gain.value=soundOn?1:0;MG.connect(AC.destination);
+      AC.onstatechange=updSnd;}
+    if(AC.state!=="running"){
+      const b=AC.createBuffer(1,1,22050),src=AC.createBufferSource();src.buffer=b;src.connect(AC.destination);src.start(0);
+      const r=AC.resume();if(r&&r.then)r.then(updSnd,updSnd);}
+  }catch(e){}
+  updSnd();}
+function updSnd(){const e=document.getElementById("sndState");if(!e)return;
+  e.textContent=!soundOn?"音:オフ":!AC?"音:画面をタップすると準備":AC.state==="running"?"音:OK":"音:準備中("+AC.state+")";}
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&AC)initAudio();});
+["pointerdown","pointerup","touchstart","touchend","mousedown","click","keydown"].forEach(ev=>document.addEventListener(ev,()=>{if(!AC||AC.state!=="running"||(!navigator.audioSession&&!unlockEl))initAudio();},{capture:true,passive:true}));
+function setSound(on){soundOn=on;try{localStorage.setItem("slimechain_sound",on?"on":"off");}catch(e){}
+  if(MG)MG.gain.value=on?1:0;const b=document.getElementById("sndBtn");if(b)b.textContent=on?"🔊":"🔇";updSnd();}
 function tone(f,d=0.1,type="sine",vol=0.15,slide=0){if(!AC)return;const t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();
   o.type=type;o.frequency.setValueAtTime(f,t);if(slide)o.frequency.exponentialRampToValueAtTime(f*slide,t+d);
-  g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.001,t+d);o.connect(g).connect(AC.destination);o.start(t);o.stop(t+d);}
+  g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.001,t+d);o.connect(g).connect(MG||AC.destination);o.start(t);o.stop(t+d);}
 const buzz=ms=>{try{navigator.vibrate&&navigator.vibrate(ms);}catch(e){}};
 const SFX={
-  rot:()=>tone(880,0.04,"square",0.035),
-  move:()=>tone(520,0.02,"square",0.02),
-  lock:()=>tone(180,0.08,"triangle",0.1,0.6),
+  rot:()=>tone(880,0.05,"square",0.06),
+  move:()=>tone(520,0.03,"square",0.045),
+  lock:()=>tone(180,0.1,"triangle",0.2,0.6),
+  ready:()=>tone(660,0.12,"triangle",0.15),
+  go:()=>{tone(990,0.25,"triangle",0.2);tone(1320,0.25,"sine",0.1);},
+  send:n=>{tone(300,0.3,"sawtooth",0.09,3);setTimeout(()=>tone(600,0.2,"triangle",0.12,2),80);},
+  warn:()=>{tone(220,0.12,"square",0.07);setTimeout(()=>tone(220,0.12,"square",0.07),150);},
   pop:c=>{const f=330*Math.pow(1.122,c-1);tone(f,0.18,"triangle",0.18,1.5);setTimeout(()=>tone(f*1.5,0.15,"sine",0.12),60);buzz(20+c*10);},
   garb:()=>{tone(90,0.25,"sawtooth",0.1,0.5);buzz(80);},
   win:()=>[523,659,784,1046].forEach((f,i)=>setTimeout(()=>tone(f,0.2,"triangle",0.15),i*120)),
@@ -168,7 +205,7 @@ const SFX={
 /* ---------- ボード ---------- */
 class Board{
   constructor(){
-    this.g=new Int8Array(ROWS*COLS);this.seqI=0;this.score=0;this.pending=0;this.carry=0;this.sent=0;
+    this.g=new Int8Array(ROWS*COLS);this.seqI=0;this.score=0;this.pending=0;this.carry=0;this.sent=0;this.outbox=0;
     this.state="spawn";this.t=0;this.spawnDelay=0;this.chain=0;this.maxChain=0;this.piece=null;this.popping=null;
     this.popups=[];this.dead=false;this.gq=null;this.lastFail=0;this.fallInt=650;this.dropAcc=0;this.lockT=0;this.frac=0;
     this.queue=[];this.softCount=0;
@@ -177,7 +214,7 @@ class Board{
   fits(x,y,r){const[o,p]=OFF[r];return this.get(x,y)===0&&this.get(x+o,y+p)===0;}
   spawn(){
     if(this.g[COLS+2]||!this.fits(2,1,0)){this.dead=true;this.piece=null;return;}
-    const[a,b]=pairAt(this.seqI++);this.piece={x:2,y:1,r:0,a,b};this.dropAcc=0;this.lockT=0;this.frac=0;this.state="fall";
+    const[a,b]=pairAt(this.seqI++);this.piece={x:2,y:1,r:0,a,b};this.dropAcc=0;this.lockT=0;this.lockResets=0;this.frac=0;this.state="fall";
   }
   update(dt){
     for(const p of this.popups)p.t+=dt;this.popups=this.popups.filter(p=>p.t<1300);
@@ -186,9 +223,9 @@ class Board{
     switch(this.state){
       case"spawn":this.t+=dt;if(this.t>=this.spawnDelay){this.t=0;this.spawn();}break;
       case"fall":this.updFall(dt);break;
-      case"grav":this.t+=dt;while(this.t>=22){this.t-=22;if(!this.gravStep()){this.t=0;this.afterGrav();break;}}break;
-      case"pop":this.t+=dt;if(this.t>=420){this.t=0;this.doPop();}break;
-      case"garb":this.t+=dt;while(this.t>=22){this.t-=22;const m=this.gravStep(),q=this.insertGarb();
+      case"grav":this.t+=dt;while(this.t>=GRAV_STEP){this.t-=GRAV_STEP;if(!this.gravStep()){this.t=0;this.afterGrav();break;}}break;
+      case"pop":this.t+=dt;if(this.t>=POP_TIME){this.t=0;this.doPop();}break;
+      case"garb":this.t+=dt;while(this.t>=GRAV_STEP){this.t-=GRAV_STEP;const m=this.gravStep(),q=this.insertGarb();
         if(!m&&!q){this.t=0;this.state="spawn";this.spawnDelay=120;SFX.garb();break;}}break;
     }
   }
@@ -199,15 +236,25 @@ class Board{
       else if(a==="CW")this.rotate(1);else if(a==="CCW")this.rotate(-1);
       else if(a==="HARD"){let d=0;while(this.fits(p.x,p.y+1,p.r)){p.y++;d++;}this.score+=d*2;this.lock();return;}
     }
-    const soft=this.softCount>0,iv=soft?26:this.fallInt;this.dropAcc+=dt;
+    const soft=this.softCount>0,iv=soft?75:this.fallInt;
+    // はやく に切り替えた瞬間、ふつう落下でたまっていた時間をそのまま使うと一気に何段も落ちるので、割合に直す
+    if(soft!==!!this.wasSoft){const pv=this.wasSoft?75:this.fallInt;this.dropAcc=this.dropAcc/pv*iv;this.wasSoft=soft;}
+    this.dropAcc=Math.min(this.dropAcc+dt,iv*1.5);
     while(this.dropAcc>=iv){if(this.fits(p.x,p.y+1,p.r)){this.dropAcc-=iv;p.y++;this.lockT=0;if(soft)this.score+=1;}else{this.dropAcc=0;break;}}
     if(!this.fits(p.x,p.y+1,p.r)){this.frac=0;this.dropAcc=0;this.lockT+=dt;if(this.lockT>=(soft?40:450))this.lock();}
     else this.frac=Math.min(this.dropAcc/iv,0.99);
   }
-  move(d){const p=this.piece;if(this.fits(p.x+d,p.y,p.r)){p.x+=d;SFX.move();return true;}return false;}
+  move(d){const p=this.piece;if(this.fits(p.x+d,p.y,p.r)){p.x+=d;SFX.move();this.bumpLock();return true;}return false;}
+  /* 着地中に回転・移動したら、固定までの待ち時間をやり直す(1つのスライムにつき最大 LOCK_RESET_MAX 回) */
+  bumpLock(){if(this.lockT>0&&this.lockResets<LOCK_RESET_MAX){this.lockT=0;this.lockResets++;}}
   rotate(dir){
-    const p=this.piece,nr=(p.r+dir+4)%4,[ox,oy]=OFF[nr];
-    const ok=()=>{SFX.rot();return true;};
+    const p=this.piece,nr=(p.r+dir+4)%4,[ox,oy]=OFF[nr],bx=p.x,by=p.y,br=p.r;
+    const ok=()=>{SFX.rot();this.bumpLock();
+      // 見た目だけ、くるっと回して動かす(判定はすぐ切り替わる)
+      const d=(p.r-br+4)%4,steps=d===2?2*dir:(d===1?1:-1),o=p.ra,now=performance.now();
+      let rem=0,rx=0,ry=0;if(o){const k=Math.min(1,(now-o.t0)/ROT_ANIM),r=Math.pow(1-k,2);rem=o.da*r;rx=o.dx*r;ry=o.dy*r;}
+      p.ra={t0:now,da:steps*Math.PI/2+rem,dx:bx-p.x+rx,dy:by-p.y+ry};
+      return true;};
     if(this.fits(p.x,p.y,nr)){p.r=nr;return ok();}
     if(this.fits(p.x-ox,p.y-oy,nr)){p.x-=ox;p.y-=oy;p.r=nr;return ok();}
     const now=performance.now();
@@ -226,7 +273,9 @@ class Board{
     const gs=findGroups(this.g);
     if(gs.length){this.chain++;this.popping={gs,set:new Set(gs.flatMap(x=>x.cells))};this.state="pop";this.t=0;SFX.pop(this.chain);
       const c=gs[0].cells[0];this.popups.push({text:this.chain+"れんさ!",x:(c%COLS+0.5),y:((c/COLS)|0)-1,t:0,big:this.chain>=3});}
-    else{this.maxChain=Math.max(this.maxChain,this.chain);this.chain=0;this.startGarbage();}
+    else{this.maxChain=Math.max(this.maxChain,this.chain);this.chain=0;
+      if(this.outbox>0){this.sent+=this.outbox;this.outbox=0;if(this===me)SFX.send();} // 連鎖が終わったらまとめて送る
+      this.startGarbage();}
   }
   doPop(){
     const gs=this.popping.gs;let cleared=0,gb=0;const cs=new Set();
@@ -234,10 +283,10 @@ class Board{
     removeGroups(this.g,gs);
     const bonus=Math.max(1,CHAIN_B[Math.min(this.chain-1,CHAIN_B.length-1)]+(cs.size-1)*3+gb);
     const pts=cleared*10*bonus;this.score+=pts;this.attack(pts);
-    this.popping=null;this.state="grav";this.t=-60;
+    this.popping=null;this.state="grav";this.t=-AFTER_POP;
   }
   attack(pts){this.carry+=pts;let n=Math.floor(this.carry/70);this.carry-=n*70;if(!n)return;
-    const c=Math.min(n,this.pending);this.pending-=c;n-=c;this.sent+=n;}
+    const c=Math.min(n,this.pending);this.pending-=c;n-=c;this.outbox+=n;} // 相殺の残りは連鎖が終わるまでためておく
   startGarbage(){
     if(this.pending>0){const n=Math.min(this.pending,30);this.pending-=n;
       const q=new Array(COLS).fill(Math.floor(n/6));const cols=[0,1,2,3,4,5].sort(()=>Math.random()-0.5).slice(0,n%6);
@@ -280,7 +329,7 @@ function drawBoard(v,cv,cs,banner){
   for(let y=1;y<ROWS-1;y++){ctx.beginPath();ctx.moveTo(0,y*cs);ctx.lineTo(W,y*cs);ctx.stroke();}
   ctx.strokeStyle="#ff4d6d66";ctx.lineWidth=Math.max(1.5,cs/11);const mx=2*cs,m=cs*0.27;
   ctx.beginPath();ctx.moveTo(mx+m,m);ctx.lineTo(mx+cs-m,cs-m);ctx.moveTo(mx+cs-m,m);ctx.lineTo(mx+m,cs-m);ctx.stroke();
-  const g=v.g,pop=v.popSet,flash=pop&&Math.floor(v.popT/70)%2===0;
+  const g=v.g,pop=v.popSet,flash=pop&&Math.floor(v.popT/110)%2===0;
   for(let y=1;y<ROWS;y++)for(let x=0;x<COLS;x++){const c=g[y*COLS+x];if(!c||c===5)continue;
     const cx=(x+0.5)*cs,cy=(y-0.5)*cs;ctx.fillStyle=COLORS[c].m;
     if(x<COLS-1&&g[y*COLS+x+1]===c)ctx.fillRect(cx,cy-cs*0.28,cs,cs*0.56);
@@ -294,10 +343,12 @@ function drawBoard(v,cv,cs,banner){
     let ga,gb;if(ox===0){const t=top(p.x);if(oy<0){ga=t;gb=t-1;}else{gb=t;ga=t-1;}}else{ga=top(p.x);gb=top(p.x+ox);}
     for(const[gx,gy,c]of[[p.x,ga,p.a],[p.x+ox,gb,p.b]])if(gy>=1&&COLORS[c]){ctx.fillStyle=COLORS[c].m;ctx.globalAlpha=0.5;
       ctx.beginPath();ctx.arc((gx+0.5)*cs,(gy-0.5)*cs,cs*0.14,0,7);ctx.fill();ctx.globalAlpha=1;}
-    const ay=(p.y+v.frac-0.5)*cs;
-    blob(ctx,cs,(p.x+ox+0.5)*cs,ay+oy*cs,p.b);
-    blob(ctx,cs,(p.x+0.5)*cs,ay,p.a);
-    if(cs>=16){ctx.strokeStyle="#ffffffaa";ctx.lineWidth=2;ctx.beginPath();ctx.arc((p.x+0.5)*cs,ay,cs*0.47,0,7);ctx.stroke();}}
+    let th=p.r*Math.PI/2,axo=0,ayo=0;
+    if(p.ra){const k=Math.min(1,(performance.now()-p.ra.t0)/ROT_ANIM),r=Math.pow(1-k,2);th-=p.ra.da*r;axo=p.ra.dx*r;ayo=p.ra.dy*r;if(k>=1)p.ra=null;}
+    const ax=(p.x+axo+0.5)*cs,ay=(p.y+ayo+v.frac-0.5)*cs;
+    blob(ctx,cs,ax+Math.sin(th)*cs,ay-Math.cos(th)*cs,p.b);
+    blob(ctx,cs,ax,ay,p.a);
+    if(cs>=16){ctx.strokeStyle="#ffffffaa";ctx.lineWidth=2;ctx.beginPath();ctx.arc(ax,ay,cs*0.47,0,7);ctx.stroke();}}
   for(const pp of v.popups){const k=pp.t/1300;ctx.globalAlpha=Math.max(0,1-k*k);
     const sz=Math.max(11,cs*(pp.big?0.95:0.7)),tx=Math.min(Math.max(pp.x*cs,W*0.3),W*0.7),ty=Math.max(pp.y*cs-k*cs*1.2,cs);
     bigText(ctx,pp.text,tx,ty,sz,pp.big?"#ffd23f":"#fff");ctx.globalAlpha=1;}
@@ -318,6 +369,7 @@ function drawNext(b,cv){const ctx=ctxOf(cv);ctx.clearRect(0,0,CS*2.9,CS*2.8);
    ◀▶: 押しっぱなしで連続移動 / ▼: 押している間はやく落ちる / ⟲⟳: 回転 / ⤓: すぐ落とす */
 (function bindPad(){
   const REPEAT={L:1,R:1};
+  const MOVE_FIRST=260,MOVE_REPEAT=120; // 押しっぱなし: 連続移動が始まるまで / 1マスごとの間隔(ms)
   document.querySelectorAll("#pad button").forEach(b=>{
     const a=b.dataset.a;let timer=null,held=false;
     const fire=()=>{if(me&&playing&&!paused&&readyT<=0)me.queue.push(a);};
@@ -326,7 +378,7 @@ function drawNext(b,cv){const ctx=ctxOf(cv);ctx.clearRect(0,0,CS*2.9,CS*2.8);
       b.classList.add("on");
       if(a==="SOFT"){if(!held&&me){held=true;me.softCount++;}return;}
       fire();
-      if(REPEAT[a]){clearTimeout(timer);const rep=()=>{fire();timer=setTimeout(rep,55);};timer=setTimeout(rep,170);}
+      if(REPEAT[a]){clearTimeout(timer);const rep=()=>{fire();timer=setTimeout(rep,MOVE_REPEAT);};timer=setTimeout(rep,MOVE_FIRST);}
     });
     const up=()=>{b.classList.remove("on");clearTimeout(timer);timer=null;
       if(a==="SOFT"&&held){held=false;if(me)me.softCount=Math.max(0,me.softCount-1);}};
@@ -334,7 +386,26 @@ function drawNext(b,cv){const ctx=ctxOf(cv);ctx.clearRect(0,0,CS*2.9,CS*2.8);
     b.addEventListener("contextmenu",e=>e.preventDefault());
   });
 })();
-document.addEventListener("gesturestart",e=>e.preventDefault());
+/* ---------- ズーム・選択・スクロールを止める(iPhone対策) ----------
+   メニューの中とトップのボタン以外は、指で触っても画面が反応しないようにする */
+["gesturestart","gesturechange","gestureend"].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
+const inUi=t=>t&&t.closest&&t.closest("#overlay,#top");
+document.addEventListener("touchstart",e=>{if(e.touches.length>1||!inUi(e.target))e.preventDefault();},{passive:false});
+document.addEventListener("touchmove",e=>e.preventDefault(),{passive:false});
+let lastTouchEnd=0,lastTouchTarget=null;
+document.addEventListener("touchend",e=>{const now=Date.now(),t=e.target;
+  if(t&&t.tagName==="INPUT"){lastTouchEnd=now;lastTouchTarget=t;return;}
+  if(now-lastTouchEnd<400&&(!inUi(t)||t===lastTouchTarget))e.preventDefault();
+  lastTouchEnd=now;lastTouchTarget=t;},{passive:false});
+/* それでもズームされたら、すぐ元の倍率にもどす */
+const vpMeta=document.querySelector('meta[name="viewport"]');
+const VP="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover";
+function resetZoom(){if(!vpMeta)return;vpMeta.setAttribute("content",VP+",minimum-scale=1");setTimeout(()=>{vpMeta.setAttribute("content",VP);layout();},60);}
+if(window.visualViewport){visualViewport.addEventListener("resize",()=>{if(visualViewport.scale>1.01)resetZoom();else layout();});
+  setInterval(()=>{if(visualViewport.scale>1.01)resetZoom();},1000);}
+document.addEventListener("dblclick",e=>e.preventDefault(),{passive:false});
+document.addEventListener("contextmenu",e=>e.preventDefault());
+document.addEventListener("selectstart",e=>{if(!(e.target&&e.target.tagName==="INPUT"))e.preventDefault();});
 
 /* ---------- レイアウト ---------- */
 function layout(){
@@ -371,7 +442,7 @@ function cleanupPeer(){
 function enterRoom(code){
   net.r={connected:()=>!!(net.peer&&net.peer.open&&!net.peer.disconnected)};
   Object.assign(net,{code,want:null,lastMy:null,lastOpp:null,gid:null,lastJson:""});
-  wins=[0,0];sendPresence(true);showLobby();
+  wins=[0,0];matchOver=false;roundNo=0;sendPresence(true);showLobby();
 }
 function showConnecting(msg){
   scr="connecting";card(`<h2>${msg}</h2><p>少し待ってね</p><button type="button" id="bk">やめる</button>`);
@@ -440,6 +511,8 @@ async function leaveRoom(){
 }
 
 /* ---------- 画面とゲーム進行 ---------- */
+const WIN_TARGET=2; // 何本先取か
+let matchOver=false,roundNo=0;
 let me=null,mode=null,scr="menu",playing=false,paused=false,readyT=0,elapsed=0,endT=0,result=null,wins=[0,0];
 let best=0;try{best=+localStorage.getItem("slimechain_best")||0;}catch(e){}
 function keepAwake(){try{navigator.wakeLock&&navigator.wakeLock.request("screen").catch(()=>{});}catch(e){}}
@@ -453,8 +526,8 @@ function showMenu(){
    <button type="button" class="primary" id="goOnline" ${ok?"":"disabled"}><span>ふたりでたいせん</span>
      <small>${ok?"スマホ2台でへやに入って対戦":"通信の準備ができませんでした。電波を確認して開き直してね"}</small></button>
    <button type="button" id="goSolo"><span>ひとりでエンドレス</span><small>ハイスコア ${best}</small></button>
-   <div class="howto"><b>◀ ▶</b> いどう(押しっぱなしで連続)<br><b>↺ ↻</b> 左回転 / 右回転<br><b>▼ はやく</b> 押している間はやくおとす<br><b>⤓ すぐおとす</b> いっきに下まで<br>壁ぎわで回らない時は2回押すと半回転</div>`);
-  $("goOnline").onclick=showOnlineMenu;$("goSolo").onclick=()=>startSolo();
+   <div class="howto"><b>◀ ▶</b> いどう(押しっぱなしで連続)<br><b>↺ ↻</b> 左回転 / 右回転<br><b>▼ はやく</b> 押している間はやくおとす<br>壁ぎわで回らない時は2回押すと半回転<br><span style="opacity:.6">ver 1103-a / <span id="sndState"></span></span></div>`);
+  $("goOnline").onclick=showOnlineMenu;$("goSolo").onclick=()=>startSolo();updSnd();
 }
 function showOnlineMenu(err){
   scr="online";
@@ -478,17 +551,20 @@ function showJoin(err,code){
 function lobbyHtml(){
   const o=opp(),oWant=o&&o.presence&&o.presence.want,oReady=!!oWant&&oWant!==net.lastOpp,myReady=!!net.want&&net.want!==net.lastMy;
   const after=result!==null&&scr==="result";
-  const head=after?resultHead():`<h2>へや番号</h2><div class="code">${net.code}</div><p>相手にこの番号を教えてね</p>`;
+  const head=after?resultHead():`<h2>へや番号</h2><div class="code">${net.code}</div><p>相手にこの番号を教えてね<br>${WIN_TARGET}本先取で勝負!</p>`;
   const inv=(!after&&net.isHost&&!o)?`<button type="button" id="inv">招待リンクを送る</button>`:"";
   return `${head}
     <div class="players"><div>あなた<span class="st ${myReady?"on":"off"}">${myReady?"じゅんびOK":"まだ"}</span></div>
     <div>あいて<span class="st ${o?(oReady?"on":"off"):"off"}">${o?(oReady?"じゅんびOK":"入室中"):"まだ来ていません"}</span></div></div>
-    <button type="button" class="primary" id="rdy" ${myReady?"disabled":""}>${myReady?(o?"あいてを待っています…":"あいての入室を待っています…"):(after?"もういちど":"じゅんびOK")}</button>
+    <button type="button" class="primary" id="rdy" ${myReady?"disabled":""}>${myReady?(o?"あいてを待っています…":"あいての入室を待っています…"):(after?(matchOver?"新しい試合をはじめる":"つぎの1本へ"):"じゅんびOK")}</button>
     ${inv}<button type="button" id="lv">へやを出る</button>`;
 }
 function resultHead(){
   const t={win:["かち!","#ffd23f"],lose:["まけ…","#ff6b85"],draw:["ひきわけ","#fff"],left:["あいてが退出しました","#a9a9d6"]}[result]||["",""];
-  return `<h2 style="color:${t[1]};font-size:30px">${t[0]}</h2><p>せんせき ${wins[0]} - ${wins[1]} / さいだい ${me?me.maxChain:0}れんさ<br>へや ${net.code}</p>`;
+  if(matchOver){const w=wins[0]>=WIN_TARGET;
+    return `<h1>${w?"しょうり!":"はいぼく…"}</h1><p>${WIN_TARGET}本先取 <b style="color:var(--accent);font-size:20px">${wins[0]} - ${wins[1]}</b><br>${w?"おめでとう!":"つぎはがんばろう"} / へや ${net.code}</p>`;}
+  const rest=wins[0]===WIN_TARGET-1||wins[1]===WIN_TARGET-1?`<br>${wins[0]===WIN_TARGET-1&&wins[1]===WIN_TARGET-1?"つぎで決まる!":wins[0]===WIN_TARGET-1?"あと1本で勝ち!":"あいてがあと1本…"}`:"";
+  return `<h2 style="color:${t[1]};font-size:30px">${t[0]}</h2><p>${WIN_TARGET}本先取 ${wins[0]} - ${wins[1]}${rest}<br>さいだい ${me?me.maxChain:0}れんさ / へや ${net.code}</p>`;
 }
 let lobbyKey="";
 function showLobby(){scr="lobby";result=null;lobbyKey="";renderLobby();}
@@ -504,6 +580,8 @@ function renderLobby(){
 function startOnline(oppWant){
   net.lastMy=net.want;net.lastOpp=oppWant;
   net.gid=[net.want,oppWant].sort().join("-");
+  if(matchOver){wins=[0,0];matchOver=false;roundNo=0;}
+  roundNo++;
   seq=[];seqRng=mulberry(hashStr(net.gid));
   me=new Board();oppView=null;net.oppSeen=0;net.goneT=0;net.oppChain=0;
   mode="online";startCommon();sendPresence(true);
@@ -517,6 +595,7 @@ function startCommon(){
 function finishOnline(r){
   if(scr!=="play")return;
   result=r;playing=false;if(r==="win")wins[0]++;else if(r==="lose")wins[1]++;
+  if(wins[0]>=WIN_TARGET||wins[1]>=WIN_TARGET)matchOver=true;
   (r==="win"||r==="left"?SFX.win:SFX.lose)();
   setTimeout(()=>{if(scr!=="play"||result!==r)return;
     if(r==="left"){scr="result";card(`<h2>あいてが退出しました</h2><p>せんせき ${wins[0]} - ${wins[1]}</p>
@@ -536,6 +615,7 @@ function togglePause(){
     $("rs").onclick=togglePause;$("mn").onclick=()=>{me=null;showMenu();};}
   else hideCard();
 }
+$("sndBtn").onclick=()=>{initAudio();setSound(!soundOn);if(soundOn)SFX.join();};setSound(soundOn);
 $("pauseBtn").onclick=()=>{initAudio();togglePause();};
 $("menuBtn").onclick=()=>{
   if(mode==="solo"&&playing){if(!paused)togglePause();return;}
@@ -546,6 +626,7 @@ $("menuBtn").onclick=()=>{
 };
 
 function bannerFor(){
+  if(readyT>0&&playing&&mode==="online"&&readyT>1150)return{text:roundNo+"本目",size:1.2,color:"#ffb84d"};
   if(readyT>0&&playing)return readyT>600?{text:"READY",size:1.1,color:"#fff"}:{text:"GO!",size:1.5,color:"#ffd23f"};
   if(mode==="online"&&result==="win")return{text:"かち!",size:1.6,color:"#ffd23f"};
   if(mode==="online"&&result==="lose")return{text:"まけ…",size:1.3,color:"#ff6b85"};
@@ -558,7 +639,7 @@ function updateStatus(){
   if(mode==="solo"&&me){st.textContent=`ハイスコア ${best}`;return;}
   if(net.r){const o=opp(),c=net.r.connected();
     st.innerHTML=`<span class="dot" style="background:${c?(o?"var(--ok)":"var(--accent)"):"var(--bad)"}"></span>へや ${net.code}・${!c?"つながっていません":o?"あいて接続中":"あいて待ち"}`;
-    $("wins").textContent=`${wins[0]} - ${wins[1]}`;return;}
+    $("wins").textContent=`${WIN_TARGET}本先取 ${wins[0]}-${wins[1]}`;return;}
   st.textContent="スライムチェイン";
 }
 
@@ -573,13 +654,14 @@ function loop(now){
     else renderLobby();
   }
   if(playing&&!paused){
-    if(readyT>0)readyT-=dt;
+    if(readyT>0){const pr=readyT;readyT-=dt;
+      if(pr>=2000&&mode!=="online"||pr>1150&&readyT<=1150&&mode==="online")SFX.ready();if(pr>600&&readyT<=600)SFX.go();}
     else{
       elapsed+=dt;
-      me.fallInt=mode==="solo"?Math.max(120,650-elapsed/1000*3):Math.max(250,650-elapsed/1000*2);
+      me.fallInt=900; // 落ちる速さはずっと同じ
       if(mode==="online"){
         if(o){net.goneT=0;readOpp(o);
-          if(oppView&&oppView.sent>net.oppSeen){me.pending+=oppView.sent-net.oppSeen;net.oppSeen=oppView.sent;}}
+          if(oppView&&oppView.sent>net.oppSeen){me.pending+=oppView.sent-net.oppSeen;net.oppSeen=oppView.sent;SFX.warn();}}
         else{net.goneT+=dt;if(net.goneT>5000)finishOnline("left");}
       }
       if(playing)me.update(dt);
