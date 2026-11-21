@@ -6,7 +6,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>スライムチェイン</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#1e1e3f">
+<meta name="theme-color" content="#2a1f6b">
+<link rel="preload" href="assets/slimes.png" as="image">
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
 html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -20,60 +21,71 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
 [hidden]{display:none!important}
 #zone,#zone *,#pad,#pad *{touch-action:none}
 #overlay,#top{touch-action:manipulation}
-html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--fg);font-family:var(--font);
+html,body{height:100%;margin:0;overflow:hidden;background:#2a1f6b url(assets/bg.jpg) center/cover no-repeat;color:var(--fg);font-family:var(--font);
   touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;overscroll-behavior:none}
 #game{height:100%;display:flex;flex-direction:column}
 #top{height:40px;flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;
   padding-left:max(10px,env(safe-area-inset-left,0px));padding-right:max(10px,env(safe-area-inset-right,0px));
-  background:var(--panel);border-bottom:1px solid var(--line)}
+  background:linear-gradient(#ffffff26,#ffffff0d);border-bottom:1px solid #ffffff26;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
 #sndBtn{position:relative;z-index:11}
-#top button{height:28px;min-width:48px;padding:0 12px;border:0;border-radius:14px;background:#ffffff1a;color:var(--fg);font:800 13px var(--font)}
+#top button{height:28px;min-width:48px;padding:0 12px;border:0;border-radius:14px;background:linear-gradient(#ffffff40,#ffffff14);
+  box-shadow:inset 0 1px 0 #fff6,0 2px 0 #0004;color:var(--fg);font:800 13px var(--font)}
 #status{font-size:12px;font-weight:800;color:var(--dim);text-align:center;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #status .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:1px}
-#zone{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 8px;
-  background:linear-gradient(180deg,#1a1a3c,var(--bg))}
+#zone{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;gap:14px;padding:6px 8px}
 .col{display:flex;flex-direction:column;align-items:center;gap:4px}
-.board{border-radius:8px;box-shadow:0 0 0 2px var(--line),0 6px 20px #0008;background:var(--board);display:block}
+/* 盤面のふち: 白い光→紫のふち→濃いふち の三重(ぷるんとしたキャンディ風) */
+.board{border-radius:10px;background:var(--board);display:block;
+  box-shadow:0 0 0 2px #ffffffb0,0 0 0 6px #8a5cff,0 0 0 8px #c9b3ff,0 0 0 11px #2a1666,0 12px 30px #000c}
 .side{display:flex;flex-direction:column;align-items:center;gap:5px}
 .side canvas{display:block}
-#n1{background:var(--panel);border-radius:8px}
-.lbl{font-size:11px;font-weight:800;letter-spacing:.12em;color:var(--dim)}
-.score{font-family:ui-monospace,Menlo,monospace;font-weight:700;font-variant-numeric:tabular-nums}
-#oppBox{display:flex;flex-direction:column;align-items:center;gap:3px;margin-top:6px;padding-top:8px;border-top:1px solid var(--line)}
-#b2{border-radius:5px;box-shadow:0 0 0 1px var(--line);background:var(--board)}
+#n1{background:radial-gradient(circle at 50% 30%,#3a2f8a,#1a1446);border-radius:12px;box-shadow:0 0 0 2px #ffffffa0,0 0 0 5px #8a5cff,0 0 0 7px #2a1666,0 6px 16px #0008}
+.lbl{font-size:12px;font-weight:900;letter-spacing:.14em;color:#fff;text-shadow:0 2px 0 #2a1666,0 0 6px #8a5cff}
+.side .lbl{margin-top:6px}
+.score{font-family:var(--font);font-weight:900;font-variant-numeric:tabular-nums;color:#fff6a8;
+  text-shadow:0 2px 0 #b35a00,1px 1px 0 #1a1033,-1px -1px 0 #1a1033,1px -1px 0 #1a1033,-1px 1px 0 #1a1033}
+#oppBox{display:flex;flex-direction:column;align-items:center;gap:3px;margin-top:8px;padding:8px 6px 6px;border-radius:12px;background:#0003;box-shadow:inset 0 0 0 1px #ffffff26}
+#b2{border-radius:5px;box-shadow:0 0 0 2px #ffffff80,0 0 0 4px #ff5d9e,0 6px 14px #0008;background:var(--board)}
 #wins{font-weight:900;color:var(--accent);font-size:13px}
-#overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000b;z-index:10;
+#overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,#2a1f6b99,#0a0620e6);z-index:10;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-.card{background:var(--panel);padding:24px 20px;border-radius:18px;text-align:center;box-shadow:0 10px 40px #000a;width:100%;max-width:340px}
+.card{background:linear-gradient(#3b2f93,#241a63);padding:22px 20px;border-radius:24px;text-align:center;width:100%;max-width:340px;
+  box-shadow:0 0 0 3px #ffffffa0,0 0 0 7px #8a5cff,0 0 0 10px #2a1666,0 16px 50px #000c,inset 0 2px 0 #ffffff40}
+.card .logo{display:block;width:108%;margin:-6px -4% 2px;filter:drop-shadow(0 6px 8px #0008)}
 .card h1{margin:0 0 4px;font-size:32px;line-height:1.2;background:linear-gradient(90deg,#ff5d7a,#ffd23f,#3ddc84,#4d9dff);
   -webkit-background-clip:text;background-clip:text;color:transparent}
 .card h2{margin:0 0 6px;font-size:22px}
 .card p{color:var(--dim);margin:6px 0 14px;font-size:14px;line-height:1.6}
-.card button{display:block;width:100%;margin:10px 0;padding:14px;font:800 18px var(--font);border:0;border-radius:14px;
-  background:#3a3a78;color:var(--fg)}
-.card button.primary{background:#e0567a}
+.card button{display:block;width:100%;margin:12px 0;padding:14px;font:900 18px var(--font);border:0;border-radius:18px;
+  background:linear-gradient(#6a62d6,#4a3fb0);color:var(--fg);text-shadow:0 2px 0 #0005;
+  box-shadow:inset 0 2px 0 #ffffff60,inset 0 -3px 0 #0003,0 5px 0 #20185a,0 7px 12px #0006}
+.card button:active{transform:translateY(3px);box-shadow:inset 0 2px 0 #ffffff60,0 2px 0 #20185a}
+.card button.primary{background:linear-gradient(#ff7aa0,#ff3d6e);box-shadow:inset 0 2px 0 #ffffff80,inset 0 -3px 0 #0003,0 5px 0 #a3163f,0 7px 12px #0006}
 .card button:disabled{opacity:.45}
 .card button small{display:block;font-size:11px;font-weight:600;color:var(--dim);margin-top:2px}
-.card button.primary small{color:#ffe0e8}
+.card button.primary small{color:#fff0f4}
 .code{font:900 52px ui-monospace,Menlo,monospace;letter-spacing:.18em;color:var(--accent);margin:4px 0}
 #codeIn{width:100%;font:900 40px ui-monospace,Menlo,monospace;letter-spacing:.3em;text-align:center;padding:10px;border-radius:12px;
   border:2px solid var(--line);background:var(--board);color:var(--fg);user-select:text;-webkit-user-select:text;touch-action:manipulation}
 .players{display:flex;gap:10px;margin:10px 0}
-.players div{flex:1;background:#00000033;border-radius:12px;padding:10px 6px;font-size:13px;font-weight:800}
+.players div{flex:1;background:#0003;border-radius:14px;box-shadow:inset 0 0 0 1px #ffffff1f;padding:10px 6px;font-size:13px;font-weight:800}
 .players .st{display:block;font-size:12px;margin-top:4px}
 .on{color:var(--ok)} .off{color:var(--dim)}
-.howto{font-size:12px;color:var(--dim);line-height:1.8;text-align:left;background:#00000033;border-radius:10px;padding:10px 12px;margin-top:6px}
+.howto{font-size:12px;color:#d6d0ff;line-height:1.8;text-align:left;background:#0003;border-radius:14px;padding:10px 12px;margin-top:6px;box-shadow:inset 0 0 0 1px #ffffff1f}
 .howto b{color:var(--fg)}
-#pad{flex:none;display:flex;justify-content:space-between;gap:16px;padding-top:8px;padding-bottom:10px;
+#pad{flex:none;display:flex;justify-content:space-between;gap:16px;padding-top:10px;padding-bottom:12px;
   padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));
-  background:var(--panel);border-top:1px solid var(--line)}
+  background:linear-gradient(#ffffff1f,#ffffff08);border-top:1px solid #ffffff26;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
 .cluster{display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:1;max-width:200px}
-#pad button{height:56px;border:0;border-radius:16px;background:#2e2e60;color:var(--fg);font:900 26px var(--font);
-  box-shadow:0 4px 0 #0007;touch-action:none;user-select:none;-webkit-user-select:none}
+/* キャンディみたいなボタン: 上にツヤ・下に厚み */
+#pad button{height:56px;border:0;border-radius:20px;color:#fff;font:900 26px var(--font);text-shadow:0 2px 0 #0004;
+  background:linear-gradient(#5aa8ff,#2f6fe0);box-shadow:inset 0 3px 0 #ffffff70,inset 0 -4px 0 #0002,0 5px 0 #173d8f,0 8px 12px #0006;
+  touch-action:none;user-select:none;-webkit-user-select:none}
+#pad button[data-a="SOFT"]{background:linear-gradient(#4fe39a,#1fb067);box-shadow:inset 0 3px 0 #ffffff70,inset 0 -4px 0 #0002,0 5px 0 #0d6b3c,0 8px 12px #0006}
 #pad button.wide{grid-column:span 2;height:76px;font-size:22px}
-#pad .rot{background:#7a3360;font-size:34px}
+#pad .rot{background:linear-gradient(#ff7aa8,#ff3d78);box-shadow:inset 0 3px 0 #ffffff70,inset 0 -4px 0 #0002,0 5px 0 #a3163f,0 8px 12px #0006;font-size:38px}
 #pad .cluster.r button{height:140px}
-#pad button.on{transform:translateY(3px);box-shadow:0 1px 0 #0007;filter:brightness(1.35)}
+#pad button.on{transform:translateY(4px);filter:brightness(1.15);box-shadow:inset 0 3px 0 #ffffff70,0 1px 0 #0006}
 .err{color:var(--bad);font-size:13px;min-height:1.2em;margin:4px 0}
 </style>
 </head>
@@ -124,6 +136,11 @@ const COLORS={1:{l:"#ffb3c0",m:"#ff4d6d",d:"#c21f43"},2:{l:"#b6ffd3",m:"#2fd77a"
   3:{l:"#bfe0ff",m:"#4d9dff",d:"#1d5fc4"},4:{l:"#fff3b0",m:"#ffd23f",d:"#d19a00"},5:{l:"#f0f0f8",m:"#b8b8cc",d:"#7a7a90"}};
 const FONT='"Hiragino Maru Gothic ProN","Hiragino Sans",sans-serif';
 const $=id=>document.getElementById(id);
+/* Blenderで作った画像(tools/ 参照)。読み込み前は手描きの丸で代用する */
+const SP=128; // アトラス1コマの画素数: 行=色1〜5、列=つながり(上1 右2 下4 左8)0〜15・16=消える顔
+const img=src=>{const i=new Image();i.decoding="async";i.src=src;return i;};
+const SPR=img("assets/slimes.png"),BOARD_IMG=img("assets/board.jpg");
+const ready=i=>i.complete&&i.naturalWidth>0;
 
 /* ---------- 共通の乱数(2台で同じ順番のスライムを出す) ---------- */
 function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
@@ -209,7 +226,10 @@ class Board{
     this.state="spawn";this.t=0;this.spawnDelay=0;this.chain=0;this.maxChain=0;this.piece=null;this.popping=null;
     this.popups=[];this.dead=false;this.gq=null;this.lastFail=0;this.fallInt=650;this.dropAcc=0;this.lockT=0;this.frac=0;
     this.queue=[];this.softCount=0;
+    this.mv=new Uint8Array(ROWS*COLS);this.landT=new Float64Array(ROWS*COLS);this.parts=[];this.shake=0;
   }
+  /* 落ちて止まったマスに「むにゅっ」の時刻をつける */
+  landMoved(){const now=performance.now();for(let i=0;i<this.mv.length;i++)if(this.mv[i]){this.mv[i]=0;if(this.g[i])this.landT[i]=now;}}
   get(x,y){return(x<0||x>=COLS||y>=ROWS)?9:(y<0?0:this.g[y*COLS+x]);}
   fits(x,y,r){const[o,p]=OFF[r];return this.get(x,y)===0&&this.get(x+o,y+p)===0;}
   spawn(){
@@ -218,6 +238,8 @@ class Board{
   }
   update(dt){
     for(const p of this.popups)p.t+=dt;this.popups=this.popups.filter(p=>p.t<1300);
+    const s=dt/1000;for(const q of this.parts){q.t+=dt;q.x+=q.vx*s;q.y+=q.vy*s;q.vy+=26*s;}
+    this.parts=this.parts.filter(q=>q.t<q.life);if(this.shake>0)this.shake=Math.max(0,this.shake-dt);
     if(this.dead)return;
     if(this.state!=="fall")this.queue.length=0;
     switch(this.state){
@@ -226,7 +248,7 @@ class Board{
       case"grav":this.t+=dt;while(this.t>=GRAV_STEP){this.t-=GRAV_STEP;if(!this.gravStep()){this.t=0;this.afterGrav();break;}}break;
       case"pop":this.t+=dt;if(this.t>=POP_TIME){this.t=0;this.doPop();}break;
       case"garb":this.t+=dt;while(this.t>=GRAV_STEP){this.t-=GRAV_STEP;const m=this.gravStep(),q=this.insertGarb();
-        if(!m&&!q){this.t=0;this.state="spawn";this.spawnDelay=120;SFX.garb();break;}}break;
+        if(!m&&!q){this.t=0;this.landMoved();this.state="spawn";this.spawnDelay=120;SFX.garb();break;}}break;
     }
   }
   updFall(dt){
@@ -264,12 +286,14 @@ class Board{
     this.lastFail=now;return false;
   }
   lock(){const p=this.piece,[ox,oy]=OFF[p.r];
-    if(p.y>=0)this.g[p.y*COLS+p.x]=p.a;if(p.y+oy>=0)this.g[(p.y+oy)*COLS+p.x+ox]=p.b;
+    if(p.y>=0){this.g[p.y*COLS+p.x]=p.a;this.mv[p.y*COLS+p.x]=1;}
+    if(p.y+oy>=0){this.g[(p.y+oy)*COLS+p.x+ox]=p.b;this.mv[(p.y+oy)*COLS+p.x+ox]=1;}
     this.piece=null;this.state="grav";this.t=0;this.chain=0;SFX.lock();}
   gravStep(){let m=false;const g=this.g;
-    for(let y=ROWS-2;y>=0;y--)for(let x=0;x<COLS;x++){const i=y*COLS+x;if(g[i]&&!g[i+COLS]){g[i+COLS]=g[i];g[i]=0;m=true;}}
+    for(let y=ROWS-2;y>=0;y--)for(let x=0;x<COLS;x++){const i=y*COLS+x;if(g[i]&&!g[i+COLS]){g[i+COLS]=g[i];g[i]=0;this.mv[i+COLS]=1;this.mv[i]=0;m=true;}}
     return m;}
   afterGrav(){
+    this.landMoved();
     const gs=findGroups(this.g);
     if(gs.length){this.chain++;this.popping={gs,set:new Set(gs.flatMap(x=>x.cells))};this.state="pop";this.t=0;SFX.pop(this.chain);
       const c=gs[0].cells[0];this.popups.push({text:this.chain+"れんさ!",x:(c%COLS+0.5),y:((c/COLS)|0)-1,t:0,big:this.chain>=3});}
@@ -280,6 +304,11 @@ class Board{
   doPop(){
     const gs=this.popping.gs;let cleared=0,gb=0;const cs=new Set();
     for(const gr of gs){cleared+=gr.cells.length;cs.add(gr.c);gb+=Math.min(10,(gr.cells.length-4)*2);}
+    // はじける粒
+    for(const gr of gs)for(const i of gr.cells){const x=i%COLS+0.5,y=((i/COLS)|0)-0.5;
+      for(let k=0;k<5;k++){const a=Math.random()*Math.PI*2,v=3+Math.random()*5;
+        this.parts.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-6,c:gr.c,t:0,life:500+Math.random()*350,r:0.22+Math.random()*0.18});}}
+    if(this.chain>=3)this.shake=Math.min(450,150+this.chain*60);
     removeGroups(this.g,gs);
     const bonus=Math.max(1,CHAIN_B[Math.min(this.chain-1,CHAIN_B.length-1)]+(cs.size-1)*3+gb);
     const pts=cleared*10*bonus;this.score+=pts;this.attack(pts);
@@ -298,14 +327,17 @@ class Board{
       if(!this.g[x]){this.g[x]=5;this.gq[x]--;left=true;}
       else if(this.g[COLS+x])this.gq[x]=0;else left=true;}
     return left||this.gq.some(v=>v>0);}
-  view(){return{g:this.g,piece:this.piece,frac:this.frac,popSet:this.popping?this.popping.set:null,popT:this.t,popups:this.popups,dead:this.dead};}
+  view(){return{g:this.g,piece:this.piece,frac:this.frac,popSet:this.popping?this.popping.set:null,popT:this.t,popups:this.popups,dead:this.dead,landT:this.landT,parts:this.parts,shake:this.shake};}
 }
 
 /* ---------- 描画 ---------- */
 const DPR=Math.min(window.devicePixelRatio||1,3);
 function sizeCanvas(cv,w,h){cv.width=Math.round(w*DPR);cv.height=Math.round(h*DPR);cv.style.width=w+"px";cv.style.height=h+"px";}
 function ctxOf(cv){const c=cv.getContext("2d");c.setTransform(DPR,0,0,DPR,0,0);return c;}
-function blob(ctx,cs,cx,cy,c,s=1,alpha=1){
+/* スライム1つ。mask=となりとつながる方向、face=16で消える顔、sy<1で下を支点にむにゅっとつぶす */
+function blob(ctx,cs,cx,cy,c,s=1,alpha=1,mask=0,face=0,sy=1){
+  if(ready(SPR)&&c>=1&&c<=5){const w=cs*s*(1+(1-sy)*0.9),h=cs*s*sy,bot=cy+cs*s/2;
+    ctx.globalAlpha=alpha;ctx.drawImage(SPR,(face||mask)*SP,(c-1)*SP,SP,SP,cx-w/2,bot-h,w,h);ctx.globalAlpha=1;return;}
   const r=cs*0.45*s,col=COLORS[c];if(!col)return;ctx.globalAlpha=alpha;
   const grd=ctx.createRadialGradient(cx-r*0.35,cy-r*0.45,r*0.1,cx,cy,r*1.05);
   grd.addColorStop(0,col.l);grd.addColorStop(0.55,col.m);grd.addColorStop(1,col.d);
@@ -321,22 +353,36 @@ function blob(ctx,cs,cx,cy,c,s=1,alpha=1){
 }
 function bigText(ctx,text,x,y,size,fill){ctx.font=`900 ${size}px ${FONT}`;ctx.textAlign="center";ctx.textBaseline="middle";
   ctx.lineJoin="round";ctx.lineWidth=size*0.2;ctx.strokeStyle="#000";ctx.strokeText(text,x,y);ctx.fillStyle=fill;ctx.fillText(text,x,y);}
+function chainText(ctx,text,x,y,size,big){
+  ctx.font=`900 ${size}px ${FONT}`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.lineJoin="round";
+  ctx.lineWidth=size*0.32;ctx.strokeStyle="#1a1033";ctx.strokeText(text,x,y);
+  ctx.lineWidth=size*0.12;ctx.strokeStyle="#fff";ctx.strokeText(text,x,y);
+  const gr=ctx.createLinearGradient(0,y-size/2,0,y+size/2);
+  if(big){gr.addColorStop(0,"#fff6a8");gr.addColorStop(0.5,"#ffc21f");gr.addColorStop(1,"#ff6a1f");}
+  else{gr.addColorStop(0,"#bfe4ff");gr.addColorStop(1,"#3d8bff");}
+  ctx.fillStyle=gr;ctx.fillText(text,x,y);}
 function drawBoard(v,cv,cs,banner){
-  const ctx=ctxOf(cv),W=COLS*cs,H=(ROWS-1)*cs;
-  ctx.fillStyle="#0c0c20";ctx.fillRect(0,0,W,H);
-  ctx.strokeStyle="#ffffff0d";ctx.lineWidth=1;
-  for(let x=1;x<COLS;x++){ctx.beginPath();ctx.moveTo(x*cs,0);ctx.lineTo(x*cs,H);ctx.stroke();}
-  for(let y=1;y<ROWS-1;y++){ctx.beginPath();ctx.moveTo(0,y*cs);ctx.lineTo(W,y*cs);ctx.stroke();}
+  const ctx=ctxOf(cv),W=COLS*cs,H=(ROWS-1)*cs,now=performance.now();
+  if(ready(BOARD_IMG))ctx.drawImage(BOARD_IMG,0,0,W,H);
+  else{ctx.fillStyle="#0c0c20";ctx.fillRect(0,0,W,H);}
+  if(v.shake>0){const a=cs*0.12*Math.min(1,v.shake/200);ctx.translate((Math.random()-0.5)*a*2,(Math.random()-0.5)*a*2);}
   ctx.strokeStyle="#ff4d6d66";ctx.lineWidth=Math.max(1.5,cs/11);const mx=2*cs,m=cs*0.27;
   ctx.beginPath();ctx.moveTo(mx+m,m);ctx.lineTo(mx+cs-m,cs-m);ctx.moveTo(mx+cs-m,m);ctx.lineTo(mx+m,cs-m);ctx.stroke();
   const g=v.g,pop=v.popSet,flash=pop&&Math.floor(v.popT/110)%2===0;
-  for(let y=1;y<ROWS;y++)for(let x=0;x<COLS;x++){const c=g[y*COLS+x];if(!c||c===5)continue;
+  const spr=ready(SPR);
+  if(!spr)for(let y=1;y<ROWS;y++)for(let x=0;x<COLS;x++){const c=g[y*COLS+x];if(!c||c===5)continue;
     const cx=(x+0.5)*cs,cy=(y-0.5)*cs;ctx.fillStyle=COLORS[c].m;
     if(x<COLS-1&&g[y*COLS+x+1]===c)ctx.fillRect(cx,cy-cs*0.28,cs,cs*0.56);
     if(y<ROWS-1&&g[(y+1)*COLS+x]===c)ctx.fillRect(cx-cs*0.28,cy,cs*0.56,cs);}
+  const same=(i,j,c)=>g[j]===c&&!(pop&&pop.has(i)!==pop.has(j));
   for(let y=1;y<ROWS;y++)for(let x=0;x<COLS;x++){const i=y*COLS+x,c=g[i];if(!c)continue;
-    let s=1,a=1;if(pop&&pop.has(i)){a=flash?1:0.35;s=1.08;}
-    blob(ctx,cs,(x+0.5)*cs,(y-0.5)*cs,c,s,a);}
+    let s=1,a=1,mask=0,face=0,sy=1;
+    if(c!==5){if(y>1&&same(i,i-COLS,c))mask|=1;if(x<COLS-1&&same(i,i+1,c))mask|=2;
+      if(y<ROWS-1&&same(i,i+COLS,c))mask|=4;if(x>0&&same(i,i-1,c))mask|=8;}
+    if(pop&&pop.has(i)){face=c===5?0:16;mask=0;a=flash?1:0.55;s=1+0.08*Math.sin(v.popT/60);}
+    else if(v.landT&&v.landT[i]){const k=(now-v.landT[i])/280;if(k<1)sy=1-0.24*Math.sin(k*Math.PI)*(1-k*0.5);}
+    blob(ctx,cs,(x+0.5)*cs,(y-0.5)*cs,c,s,a,mask,face,sy);
+    if(pop&&pop.has(i)&&flash&&spr){ctx.globalCompositeOperation="lighter";blob(ctx,cs,(x+0.5)*cs,(y-0.5)*cs,c,s,0.35,0,face);ctx.globalCompositeOperation="source-over";}}
   const p=v.piece;
   if(p){const[ox,oy]=OFF[p.r];
     const top=x=>{for(let y=ROWS-1;y>=0;y--)if(!g[y*COLS+x])return y;return -1;};
@@ -348,18 +394,27 @@ function drawBoard(v,cv,cs,banner){
     const ax=(p.x+axo+0.5)*cs,ay=(p.y+ayo+v.frac-0.5)*cs;
     blob(ctx,cs,ax+Math.sin(th)*cs,ay-Math.cos(th)*cs,p.b);
     blob(ctx,cs,ax,ay,p.a);
-    if(cs>=16){ctx.strokeStyle="#ffffffaa";ctx.lineWidth=2;ctx.beginPath();ctx.arc(ax,ay,cs*0.47,0,7);ctx.stroke();}}
-  for(const pp of v.popups){const k=pp.t/1300;ctx.globalAlpha=Math.max(0,1-k*k);
-    const sz=Math.max(11,cs*(pp.big?0.95:0.7)),tx=Math.min(Math.max(pp.x*cs,W*0.3),W*0.7),ty=Math.max(pp.y*cs-k*cs*1.2,cs);
-    bigText(ctx,pp.text,tx,ty,sz,pp.big?"#ffd23f":"#fff");ctx.globalAlpha=1;}
+    if(cs>=16){ctx.globalAlpha=0.45+0.3*Math.sin(now/140);ctx.strokeStyle="#fff";ctx.lineWidth=Math.max(2,cs/16);
+      ctx.beginPath();ctx.arc(ax,ay,cs*0.49,0,7);ctx.stroke();ctx.globalAlpha=1;}}
+  if(v.parts)for(const q of v.parts){const k=q.t/q.life,col=COLORS[q.c],r=cs*q.r*0.5*(1-k*0.5),x=q.x*cs,y=q.y*cs;
+    ctx.globalAlpha=1-k*k;const gr=ctx.createRadialGradient(x-r*0.35,y-r*0.4,r*0.1,x,y,r);
+    gr.addColorStop(0,"#fff");gr.addColorStop(0.3,col.l);gr.addColorStop(1,col.m);ctx.fillStyle=gr;
+    ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fill();ctx.globalAlpha=1;}
+  for(const pp of v.popups){const k=pp.t/1300;ctx.globalAlpha=Math.max(0,1-Math.pow(k,3));
+    const pop=k<0.12?0.4+k/0.12*0.85:k<0.2?1.25-(k-0.12)/0.08*0.25:1;
+    const sz=Math.max(11,cs*(pp.big?1.0:0.75)*pop),tx=Math.min(Math.max(pp.x*cs,W*0.3),W*0.7),ty=Math.max(pp.y*cs-k*cs*0.8,cs);
+    chainText(ctx,pp.text,tx,ty,sz,pp.big);ctx.globalAlpha=1;}
   if(v.dead){ctx.fillStyle="#000a";ctx.fillRect(0,0,W,H);}
+  ctx.setTransform(DPR,0,0,DPR,0,0);
   if(banner)bigText(ctx,banner.text,W/2,H*0.42,Math.max(12,cs*banner.size),banner.color);
 }
 function drawTray(pending,cv,cs){const ctx=ctxOf(cv),W=COLS*cs,h=cs*0.7;ctx.clearRect(0,0,W,h);
   let n=pending,x=cs*0.4;const icons=[];
-  const units=[[180,"#ff5d7a",0.32],[30,"#ffb84d",0.32],[6,"#b8b8cc",0.28],[1,"#b8b8cc",0.17]];
-  for(const[u,col,r]of units)while(n>=u&&icons.length<7){icons.push([col,r*cs]);n-=u;}
-  for(const[col,r]of icons){ctx.fillStyle=col;ctx.beginPath();ctx.arc(x,h/2,r,0,7);ctx.fill();x+=cs*0.78;}}
+  const units=[[180,"#ff5d7a",0.32,1],[30,"#ffb84d",0.32,4],[6,"#b8b8cc",0.28,5],[1,"#b8b8cc",0.17,5]];
+  for(const[u,col,r,c]of units)while(n>=u&&icons.length<7){icons.push([col,r*cs,c]);n-=u;}
+  for(const[col,r,c]of icons){
+    if(ready(SPR))blob(ctx,r*2/0.92,x,h/2,c,1,1,0,c===5?0:16);
+    else{ctx.fillStyle=col;ctx.beginPath();ctx.arc(x,h/2,r,0,7);ctx.fill();}x+=cs*0.78;}}
 function drawNext(b,cv){const ctx=ctxOf(cv);ctx.clearRect(0,0,CS*2.9,CS*2.8);
   const n1=pairAt(b.seqI),n2=pairAt(b.seqI+1);
   blob(ctx,CS,CS*0.9,CS*0.75,n1[1]);blob(ctx,CS,CS*0.9,CS*1.75,n1[0]);
@@ -410,7 +465,7 @@ document.addEventListener("selectstart",e=>{if(!(e.target&&e.target.tagName==="I
 /* ---------- レイアウト ---------- */
 function layout(){
   const z=$("zone"),W=z.clientWidth,H=z.clientHeight;
-  CS=Math.max(14,Math.floor(Math.min((H-14)/12.75,(W-30)/8.95)));
+  CS=Math.max(14,Math.floor(Math.min((H-30)/12.75,(W-48)/8.95)));
   MS=Math.max(8,Math.floor(CS*0.4));
   sizeCanvas($("b1"),COLS*CS,(ROWS-1)*CS);sizeCanvas($("t1"),COLS*CS,CS*0.7);sizeCanvas($("n1"),CS*2.9,CS*2.8);
   sizeCanvas($("b2"),COLS*MS,(ROWS-1)*MS);sizeCanvas($("t2"),COLS*MS,MS*0.7);
@@ -522,11 +577,11 @@ function hideCard(){$("overlay").hidden=true;}
 function showMenu(){
   scr="menu";playing=false;paused=false;
   const ok=!!roomApi;
-  card(`<h1>スライムチェイン</h1><p>同じ色を4つつなげて消そう。<br>れんさで相手におじゃまを送りこめ!</p>
+  card(`<img class="logo" src="assets/logo.png" alt="スライムチェイン" onerror="this.outerHTML='<h1>スライムチェイン</h1>'"><p>同じ色を4つつなげて消そう。<br>れんさで相手におじゃまを送りこめ!</p>
    <button type="button" class="primary" id="goOnline" ${ok?"":"disabled"}><span>ふたりでたいせん</span>
      <small>${ok?"スマホ2台でへやに入って対戦":"通信の準備ができませんでした。電波を確認して開き直してね"}</small></button>
    <button type="button" id="goSolo"><span>ひとりでエンドレス</span><small>ハイスコア ${best}</small></button>
-   <div class="howto"><b>◀ ▶</b> いどう(押しっぱなしで連続)<br><b>↺ ↻</b> 左回転 / 右回転<br><b>▼ はやく</b> 押している間はやくおとす<br>壁ぎわで回らない時は2回押すと半回転<br><span style="opacity:.6">ver 1103-a / <span id="sndState"></span></span></div>`);
+   <div class="howto"><b>◀ ▶</b> いどう(押しっぱなしで連続)<br><b>↺ ↻</b> 左回転 / 右回転<br><b>▼ はやく</b> 押している間はやくおとす<br>壁ぎわで回らない時は2回押すと半回転<br><span style="opacity:.6">ver 1121-a / <span id="sndState"></span></span></div>`);
   $("goOnline").onclick=showOnlineMenu;$("goSolo").onclick=()=>startSolo();updSnd();
 }
 function showOnlineMenu(err){
